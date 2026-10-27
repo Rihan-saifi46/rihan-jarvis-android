@@ -51,5 +51,9 @@
         <intent>
             <action android:name="android.intent.action.TTS_SERVICE"/>
         </intent>
+        <!-- Phase 2: Explicit package queries for allowlisted Android apps -->
+        <package android:name="com.android.chrome"/>
+        <package android:name="com.google.android.youtube"/>
+        <package android:name="com.google.android.apps.maps"/>
     </queries>
 </manifest>

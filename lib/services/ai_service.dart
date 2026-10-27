@@ -4,6 +4,20 @@ import 'dart:io';
 import 'package:http/http.dart' as http;
 import '../models/chat_message.dart';
 
+class AiResponse {
+  final String reply;
+  final String type; // 'conversation' or 'action'
+  final ActionData? actionData;
+
+  const AiResponse({
+    required this.reply,
+    this.type = 'conversation',
+    this.actionData,
+  });
+
+  bool get isAction => type == 'action' && actionData != null;
+}
+
 class AiService {
   // Singleton pattern for centralized access
   static final AiService _instance = AiService._internal();
@@ -25,8 +39,9 @@ class AiService {
     _baseUrl = cleanUrl;
   }
 
-  /// Sends the user message and recent conversational history to the backend API.
-  Future<String> sendMessage({
+  /// Sends the user message and recent conversational history to the backend API,
+  /// returning an [AiResponse] with text reply and any structured [ActionData].
+  Future<AiResponse> sendMessageWithAction({
     required String message,
     List<ChatMessage> history = const [],
   }) async {
@@ -56,11 +71,30 @@ class AiService {
 
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
-        return data['reply'] as String? ?? 'All systems operational, Sir.';
+        final reply = data['reply'] as String? ?? 'All systems operational, Sir.';
+        final type = data['type'] as String? ?? 'conversation';
+
+        ActionData? actionData;
+        if (type == 'action' || data['action'] != null) {
+          actionData = ActionData(
+            action: (data['action'] as String? ?? '').toLowerCase().trim(),
+            query: data['query'] as String?,
+            app: data['app'] as String?,
+          );
+        }
+
+        return AiResponse(
+          reply: reply,
+          type: type,
+          actionData: actionData,
+        );
       } else if (response.statusCode == 503) {
         final data = jsonDecode(response.body);
-        return data['reply'] as String? ??
-            'Sir, the Gemini API key is missing in backend/.env.';
+        return AiResponse(
+          reply: data['reply'] as String? ??
+              'Sir, the Gemini API key is missing in backend/.env.',
+          type: 'conversation',
+        );
       } else {
         final data = jsonDecode(response.body);
         final err = data['error'] ?? data['reply'] ?? 'Unknown error';
@@ -78,6 +112,18 @@ class AiService {
     } catch (e) {
       throw Exception('Neural link error: ${e.toString().replaceAll('Exception: ', '')}');
     }
+  }
+
+  /// Sends the user message and returns text reply (backward-compatible convenience).
+  Future<String> sendMessage({
+    required String message,
+    List<ChatMessage> history = const [],
+  }) async {
+    final response = await sendMessageWithAction(
+      message: message,
+      history: history,
+    );
+    return response.reply;
   }
 
   /// Checks the connectivity and status of the backend server.

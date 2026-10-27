@@ -1,8 +1,11 @@
 import 'package:flutter/material.dart';
 import '../../models/chat_message.dart';
+import '../../services/action_service.dart';
 import '../../services/ai_service.dart';
 import '../../services/speech_service.dart';
 import '../../services/tts_service.dart';
+
+
 import 'theme/jarvis_theme.dart';
 import 'widgets/glowing_mic_button.dart';
 import 'widgets/message_bubble.dart';
@@ -232,16 +235,18 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
     _scrollToBottom();
 
     try {
-      final reply = await _aiService.sendMessage(
+      final aiResponse = await _aiService.sendMessageWithAction(
         message: text,
         history: _messages,
       );
 
+      final jarvisMsgId = (DateTime.now().millisecondsSinceEpoch + 1).toString();
       final jarvisMessage = ChatMessage(
-        id: (DateTime.now().millisecondsSinceEpoch + 1).toString(),
-        text: reply,
+        id: jarvisMsgId,
+        text: aiResponse.reply,
         sender: MessageSender.jarvis,
         timestamp: DateTime.now(),
+        actionData: aiResponse.actionData,
       );
 
       setState(() {
@@ -253,7 +258,27 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
 
       // Speak response aloud if not muted
       if (!_isMuted) {
-        await _ttsService.speak(reply);
+        await _ttsService.speak(aiResponse.reply);
+      }
+
+      // Execute action if an allowable Android action was dispatched
+      if (aiResponse.isAction && aiResponse.actionData != null) {
+        // Brief pause so user hears TTS / sees the message before app transition
+        await Future.delayed(const Duration(milliseconds: 600));
+        final actionResult = await ActionService.execute(aiResponse.actionData!);
+
+        final updatedAction = aiResponse.actionData!.copyWith(
+          isExecuted: true,
+          isSuccess: actionResult.success,
+          executionMessage: actionResult.message,
+        );
+
+        final idx = _messages.indexWhere((m) => m.id == jarvisMsgId);
+        if (idx != -1 && mounted) {
+          setState(() {
+            _messages[idx] = _messages[idx].copyWith(actionData: updatedAction);
+          });
+        }
       }
     } catch (e) {
       final errorMessage = ChatMessage(
@@ -270,6 +295,21 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
       });
 
       _scrollToBottom();
+    }
+  }
+
+  Future<void> _relaunchAction(ChatMessage msg) async {
+    if (msg.actionData != null) {
+      final res = await ActionService.execute(msg.actionData!);
+      if (!res.success && mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(res.message),
+            backgroundColor: JarvisTheme.surface,
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
     }
   }
 
@@ -368,6 +408,9 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
                     message: msg,
                     onReplayAudio: msg.isJarvis && !_isMuted
                         ? () => _ttsService.speak(msg.text)
+                        : null,
+                    onReplayAction: msg.actionData != null
+                        ? () => _relaunchAction(msg)
                         : null,
                     onRetry: msg.status == MessageStatus.error
                         ? () {

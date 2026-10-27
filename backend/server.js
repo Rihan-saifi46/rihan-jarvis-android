@@ -36,7 +36,27 @@ Core conversational rules:
    - Avoid markdown formatting such as asterisks (**bold**), hashtags (###), bullet symbols, or code blocks unless explicitly requested by the user, as these sound jarring when read aloud by TTS.
 4. Privacy First:
    - You only operate on the user's explicit instructions and conversation.
-   - Always maintain a secure, privacy-first attitude.`;
+   - Always maintain a secure, privacy-first attitude.
+
+ACTION DISPATCH PROTOCOL:
+You can control specific phone capabilities when the user commands an action.
+Supported Android actions:
+- google_search: Search on Google. Parameters: "query" (string, search terms without filler words).
+- youtube_search: Search on YouTube. Parameters: "query" (string, video search terms without filler words).
+- open_app: Launch a supported app. Allowed apps: "chrome", "youtube", "maps", "settings".
+
+When the user asks you to perform one of these actions (in English or Hinglish, e.g. "Google par ... search kar", "YouTube par ... search karo", "Chrome open kar", "Settings kholo", "Google Maps open kar"):
+You MUST respond with a single JSON object in this exact schema:
+{
+  "type": "action",
+  "action": "google_search" | "youtube_search" | "open_app",
+  "query": "<clean search query string if search action>",
+  "app": "chrome" | "youtube" | "maps" | "settings" (if open_app),
+  "reply": "<Crisp verbal confirmation to speak aloud to Sir, e.g. 'Searching Google for React tutorials, Sir.' or 'Opening YouTube, Sir.' or in Hinglish if asked in Hinglish>"
+}
+
+For all other messages (greetings, general chat, normal conversation, questions where no action is requested):
+Reply with normal conversational text for JARVIS (or JSON {"type": "conversation", "reply": "..."}).`;
 
 // In-memory generative AI client instance
 let genAI = null;
@@ -148,6 +168,162 @@ export function buildGeminiHistory(rawHistory, currentMessage) {
   }));
 }
 
+/**
+ * Detects whether the user command or AI response corresponds to an allowed action.
+ * Enforces strict allowlisting for:
+ * - google_search
+ * - youtube_search
+ * - open_app ('chrome', 'youtube', 'maps', 'settings')
+ */
+export function parseAiActionResponse(rawAiReply, userMessage = '') {
+  const allowedActions = ['google_search', 'youtube_search', 'open_app'];
+  const allowedApps = ['chrome', 'youtube', 'maps', 'settings'];
+
+  // 1. Try parsing JSON from the AI reply
+  let jsonString = (rawAiReply || '').trim();
+  const jsonMatch =
+    jsonString.match(/```(?:json)?\s*([\s\S]*?)\s*```/) ||
+    jsonString.match(/(\{[\s\S]*\})/);
+  if (jsonMatch) {
+    jsonString = jsonMatch[1].trim();
+  }
+
+  try {
+    const parsed = JSON.parse(jsonString);
+    if (parsed && typeof parsed === 'object') {
+      if (parsed.type === 'action' && typeof parsed.action === 'string') {
+        const action = parsed.action.toLowerCase().trim();
+        if (action === 'google_search' || action === 'youtube_search') {
+          const query = (parsed.query || '').toString().trim();
+          if (query) {
+            return {
+              type: 'action',
+              action,
+              query,
+              reply: parsed.reply || `Searching ${action === 'google_search' ? 'Google' : 'YouTube'} for ${query}, Sir.`,
+            };
+          }
+        } else if (action === 'open_app') {
+          let app = (parsed.app || '').toString().toLowerCase().trim();
+          if (app === 'google_maps' || app === 'google maps') app = 'maps';
+          if (app === 'google chrome') app = 'chrome';
+
+          if (allowedApps.includes(app)) {
+            return {
+              type: 'action',
+              action: 'open_app',
+              app,
+              reply: parsed.reply || `Opening ${app.toUpperCase()}, Sir.`,
+            };
+          }
+        }
+      } else if (parsed.type === 'conversation' && parsed.reply) {
+        return {
+          type: 'conversation',
+          reply: parsed.reply,
+        };
+      }
+    }
+  } catch (e) {
+    // Not valid JSON, proceed to intent validation
+  }
+
+  // 2. Rule-based intent fallback on userMessage (in case AI responded conversationally to an action command)
+  const userText = (userMessage || '').trim();
+  const ruleAction = matchActionIntent(userText, rawAiReply);
+  if (ruleAction) {
+    return ruleAction;
+  }
+
+  // 3. Clean standard conversation text
+  let cleanText = (rawAiReply || '')
+    .replace(/\*\*(.*?)\*\*/g, '$1')
+    .replace(/\*(.*?)\*/g, '$1')
+    .replace(/^#+\s+/gm, '')
+    .trim();
+
+  return {
+    type: 'conversation',
+    reply: cleanText || 'All systems operational, Sir.',
+  };
+}
+
+/**
+ * Regex-based intent matcher for bilingual English & Hinglish commands
+ */
+export function matchActionIntent(userText, fallbackReply = '') {
+  if (!userText) return null;
+  const trimmed = userText.trim();
+
+  // YouTube search: "YouTube par latest songs search kar", "search latest songs on youtube", "youtube search latest songs"
+  const ytMatchHinglish = trimmed.match(/(?:youtube|yt)\s+(?:par|pe)\s+(.+?)\s+(?:search\s*(?:kar|karo|karna|kardo)?|dhoondo)/i);
+  const ytMatchEng = trimmed.match(/(?:search|find)\s+(.+?)\s+(?:on|in)\s+youtube/i) ||
+                     trimmed.match(/youtube\s+(?:search|find)\s+(.+)/i);
+
+  if (ytMatchHinglish || ytMatchEng) {
+    let query = (ytMatchHinglish ? ytMatchHinglish[1] : ytMatchEng[1]).trim();
+    query = query.replace(/\s+(search|kar|karo|kardo|please)$/i, '').trim();
+    if (query) {
+      return {
+        type: 'action',
+        action: 'youtube_search',
+        query,
+        reply: fallbackReply && !fallbackReply.startsWith('{')
+          ? fallbackReply
+          : (trimmed.toLowerCase().includes('kar') || trimmed.toLowerCase().includes('par')
+              ? `YouTube par ${query} search kar raha hoon, Sir.`
+              : `Searching YouTube for ${query}, Sir.`),
+      };
+    }
+  }
+
+  // Google search: "Google par React tutorials search kar", "search react tutorials on google", "google search react tutorials"
+  const googleMatchHinglish = trimmed.match(/(?:google)\s+(?:par|pe)\s+(.+?)\s+(?:search\s*(?:kar|karo|karna|kardo)?|dhoondo)/i);
+  const googleMatchEng = trimmed.match(/(?:search|find)\s+(.+?)\s+(?:on|in)\s+google/i) ||
+                         trimmed.match(/google\s+(?:search|find)\s+(.+)/i);
+
+  if (googleMatchHinglish || googleMatchEng) {
+    let query = (googleMatchHinglish ? googleMatchHinglish[1] : googleMatchEng[1]).trim();
+    query = query.replace(/\s+(search|kar|karo|kardo|please)$/i, '').trim();
+    if (query) {
+      return {
+        type: 'action',
+        action: 'google_search',
+        query,
+        reply: fallbackReply && !fallbackReply.startsWith('{')
+          ? fallbackReply
+          : (trimmed.toLowerCase().includes('kar') || trimmed.toLowerCase().includes('par')
+              ? `Google par ${query} search kar raha hoon, Sir.`
+              : `Searching Google for ${query}, Sir.`),
+      };
+    }
+  }
+
+  // Open App: Chrome, YouTube, Maps, Settings
+  // "Chrome open kar", "open chrome", "kholo settings", "settings open kar"
+  const openAppMatch = trimmed.match(/(?:open|kholo|chalao|launch)\s+(chrome|youtube|google maps|maps|settings)/i) ||
+                       trimmed.match(/(chrome|youtube|google maps|maps|settings)\s+(?:ko\s+)?(?:open\s*(?:kar|karo|kardo)?|kholo|chalao)/i);
+
+  if (openAppMatch) {
+    let app = openAppMatch[1].toLowerCase().trim();
+    if (app === 'google maps') app = 'maps';
+
+    const appNameDisplay = app === 'chrome' ? 'Google Chrome' : (app === 'maps' ? 'Google Maps' : (app === 'youtube' ? 'YouTube' : 'Settings'));
+    return {
+      type: 'action',
+      action: 'open_app',
+      app,
+      reply: fallbackReply && !fallbackReply.startsWith('{')
+        ? fallbackReply
+        : (trimmed.toLowerCase().includes('kar') || trimmed.toLowerCase().includes('kholo')
+            ? `${appNameDisplay} open kar raha hoon, Sir.`
+            : `Opening ${appNameDisplay}, Sir.`),
+    };
+  }
+
+  return null;
+}
+
 // Chat endpoint
 app.post('/api/chat', async (req, res) => {
   try {
@@ -243,12 +419,33 @@ app.post('/api/chat', async (req, res) => {
       .replace(/^#+\s+/gm, '')         // remove heading markers
       .trim();
 
+    // Parse response for structured actions or conversation
+    const parsedResult = parseAiActionResponse(replyText, message);
+
     return res.json({
-      reply: replyText,
+      type: parsedResult.type,
+      action: parsedResult.action,
+      query: parsedResult.query,
+      app: parsedResult.app,
+      reply: parsedResult.reply,
       model: usedModel,
     });
   } catch (error) {
     console.error('JARVIS Chat Error:', error);
+
+    // If an action command was issued, execute via rule intent even during quota limits or network outages
+    const userMessage = req.body.message;
+    const ruleAction = matchActionIntent(userMessage);
+    if (ruleAction) {
+      return res.json({
+        type: ruleAction.type,
+        action: ruleAction.action,
+        query: ruleAction.query,
+        app: ruleAction.app,
+        reply: ruleAction.reply,
+        model: 'jarvis-rule-intent-engine',
+      });
+    }
 
     return res.status(500).json({
       reply: 'Apologies, Sir. I encountered a momentary disturbance in my cognitive processing. Please check connection and try again.',

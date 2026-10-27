@@ -6,12 +6,14 @@ class MessageBubble extends StatelessWidget {
   final ChatMessage message;
   final VoidCallback? onReplayAudio;
   final VoidCallback? onRetry;
+  final VoidCallback? onReplayAction;
 
   const MessageBubble({
     super.key,
     required this.message,
     this.onReplayAudio,
     this.onRetry,
+    this.onReplayAction,
   });
 
   String _formatTime(DateTime time) {
@@ -62,7 +64,7 @@ class MessageBubble extends StatelessWidget {
           Flexible(
             child: Container(
               constraints: BoxConstraints(
-                maxWidth: MediaQuery.of(context).size.width * 0.78,
+                maxWidth: MediaQuery.of(context).size.width * 0.82,
               ),
               padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
               decoration: BoxDecoration(
@@ -145,6 +147,12 @@ class MessageBubble extends StatelessWidget {
                     ),
                   ),
 
+                  // Action Badge Card if action detected
+                  if (message.actionData != null) ...[
+                    const SizedBox(height: 8),
+                    _buildActionCard(message.actionData!),
+                  ],
+
                   const SizedBox(height: 6),
 
                   // Footer: Timestamp + Actions
@@ -220,6 +228,147 @@ class MessageBubble extends StatelessWidget {
                   Icons.person,
                   color: JarvisTheme.emerald,
                   size: 16,
+                ),
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _buildActionCard(ActionData action) {
+    IconData icon;
+    String actionTitle;
+    String actionDetail;
+    Color accentColor;
+
+    switch (action.action) {
+      case 'youtube_search':
+        icon = Icons.play_circle_fill;
+        actionTitle = 'YOUTUBE SEARCH';
+        actionDetail = action.query ?? '';
+        accentColor = const Color(0xFFFF4B6E);
+        break;
+      case 'google_search':
+        icon = Icons.travel_explore;
+        actionTitle = 'GOOGLE SEARCH';
+        actionDetail = action.query ?? '';
+        accentColor = JarvisTheme.emerald;
+        break;
+      case 'open_app':
+        icon = Icons.open_in_new_rounded;
+        actionTitle = 'OPEN APPLICATION';
+        actionDetail = action.app?.toUpperCase() ?? '';
+        accentColor = JarvisTheme.cyan;
+        break;
+      default:
+        icon = Icons.bolt;
+        actionTitle = 'SYSTEM ACTION';
+        actionDetail = action.action;
+        accentColor = JarvisTheme.cyan;
+    }
+
+    final isSuccess = action.isSuccess == true;
+    final isFailed = action.isSuccess == false;
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(10),
+      decoration: BoxDecoration(
+        color: JarvisTheme.background.withValues(alpha: 0.7),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: accentColor.withValues(alpha: 0.35),
+          width: 1.0,
+        ),
+      ),
+      child: Row(
+        children: [
+          Container(
+            padding: const EdgeInsets.all(7),
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: accentColor.withValues(alpha: 0.15),
+            ),
+            child: Icon(icon, color: accentColor, size: 18),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Row(
+                  children: [
+                    Text(
+                      actionTitle,
+                      style: TextStyle(
+                        color: accentColor,
+                        fontSize: 9.5,
+                        fontWeight: FontWeight.w800,
+                        letterSpacing: 0.8,
+                      ),
+                    ),
+                    const Spacer(),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
+                      decoration: BoxDecoration(
+                        color: isSuccess
+                            ? JarvisTheme.emerald.withValues(alpha: 0.15)
+                            : (isFailed
+                                ? JarvisTheme.errorRed.withValues(alpha: 0.15)
+                                : JarvisTheme.cyan.withValues(alpha: 0.15)),
+                        borderRadius: BorderRadius.circular(4),
+                      ),
+                      child: Text(
+                        isSuccess
+                            ? 'EXECUTED'
+                            : (isFailed ? 'FAILED' : 'ACTION READY'),
+                        style: TextStyle(
+                          color: isSuccess
+                              ? JarvisTheme.emerald
+                              : (isFailed ? JarvisTheme.errorRed : JarvisTheme.cyan),
+                          fontSize: 8,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  actionDetail,
+                  style: const TextStyle(
+                    color: JarvisTheme.textPrimary,
+                    fontSize: 12.5,
+                    fontWeight: FontWeight.w600,
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ],
+            ),
+          ),
+          if (onReplayAction != null) ...[
+            const SizedBox(width: 6),
+            InkWell(
+              onTap: onReplayAction,
+              borderRadius: BorderRadius.circular(8),
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                decoration: BoxDecoration(
+                  color: JarvisTheme.surfaceLight,
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: JarvisTheme.surfaceBorder),
+                ),
+                child: const Text(
+                  'OPEN',
+                  style: TextStyle(
+                    color: JarvisTheme.cyan,
+                    fontSize: 10,
+                    fontWeight: FontWeight.w700,
+                  ),
                 ),
               ),
             ),
