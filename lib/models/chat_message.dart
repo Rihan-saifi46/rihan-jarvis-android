@@ -1,11 +1,13 @@
-enum MessageSender { user, jarvis }
+enum MessageSender { user, jarvis, mickey }
 
 enum MessageStatus { sending, sent, error }
 
 class ActionData {
-  final String action; // 'google_search', 'youtube_search', 'open_app'
+  final String action; // 'google_search', 'youtube_search', 'open_app', 'make_call', 'send_sms', 'open_whatsapp'
   final String? query;
   final String? app;
+  final String? phoneNumber;
+  final String? message;
   final bool isExecuted;
   final bool? isSuccess;
   final String? executionMessage;
@@ -14,6 +16,8 @@ class ActionData {
     required this.action,
     this.query,
     this.app,
+    this.phoneNumber,
+    this.message,
     this.isExecuted = false,
     this.isSuccess,
     this.executionMessage,
@@ -23,6 +27,8 @@ class ActionData {
     String? action,
     String? query,
     String? app,
+    String? phoneNumber,
+    String? message,
     bool? isExecuted,
     bool? isSuccess,
     String? executionMessage,
@@ -31,6 +37,8 @@ class ActionData {
       action: action ?? this.action,
       query: query ?? this.query,
       app: app ?? this.app,
+      phoneNumber: phoneNumber ?? this.phoneNumber,
+      message: message ?? this.message,
       isExecuted: isExecuted ?? this.isExecuted,
       isSuccess: isSuccess ?? this.isSuccess,
       executionMessage: executionMessage ?? this.executionMessage,
@@ -42,6 +50,8 @@ class ActionData {
       'action': action,
       'query': query,
       'app': app,
+      'phoneNumber': phoneNumber,
+      'message': message,
       'isExecuted': isExecuted,
       'isSuccess': isSuccess,
       'executionMessage': executionMessage,
@@ -53,6 +63,8 @@ class ActionData {
       action: json['action'] as String? ?? '',
       query: json['query'] as String?,
       app: json['app'] as String?,
+      phoneNumber: (json['phoneNumber'] ?? json['number']) as String?,
+      message: (json['message'] ?? json['text'] ?? json['sms_body']) as String?,
       isExecuted: json['isExecuted'] as bool? ?? false,
       isSuccess: json['isSuccess'] as bool?,
       executionMessage: json['executionMessage'] as String?,
@@ -80,7 +92,8 @@ class ChatMessage {
   });
 
   bool get isUser => sender == MessageSender.user;
-  bool get isJarvis => sender == MessageSender.jarvis;
+  bool get isJarvis => sender == MessageSender.jarvis || sender == MessageSender.mickey;
+  bool get isMickey => isJarvis;
   bool get hasAction => actionData != null;
 
   ChatMessage copyWith({
@@ -113,5 +126,33 @@ class ChatMessage {
       'isVoice': isVoice,
       'actionData': actionData?.toJson(),
     };
+  }
+
+  factory ChatMessage.fromJson(Map<String, dynamic> json) {
+    MessageSender parseSender(String? name) {
+      if (name == 'mickey') return MessageSender.mickey;
+      if (name == 'user') return MessageSender.user;
+      return MessageSender.jarvis;
+    }
+
+    MessageStatus parseStatus(String? name) {
+      if (name == 'sending') return MessageStatus.sending;
+      if (name == 'error') return MessageStatus.error;
+      return MessageStatus.sent;
+    }
+
+    return ChatMessage(
+      id: json['id'] as String? ?? '',
+      text: json['text'] as String? ?? '',
+      sender: parseSender(json['sender'] as String?),
+      timestamp: json['timestamp'] != null
+          ? DateTime.tryParse(json['timestamp'] as String) ?? DateTime.now()
+          : DateTime.now(),
+      status: parseStatus(json['status'] as String?),
+      isVoice: json['isVoice'] as bool? ?? false,
+      actionData: json['actionData'] != null
+          ? ActionData.fromJson(json['actionData'] as Map<String, dynamic>)
+          : null,
+    );
   }
 }

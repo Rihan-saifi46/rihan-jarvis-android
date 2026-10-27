@@ -90,6 +90,8 @@ class SpeechService {
     required Function(String recognizedWords, bool isFinal) onResult,
     Function(double soundLevel)? onSoundLevelChange,
     Function(SpeechStatus)? onStatusChanged,
+    Duration? listenFor,
+    Duration? pauseFor,
   }) async {
     if (!_isInitialized) {
       final ready = await initialize(onStatusChanged: onStatusChanged);
@@ -117,13 +119,33 @@ class SpeechService {
       },
       onSoundLevelChange: onSoundLevelChange,
       listenOptions: SpeechListenOptions(
-        listenFor: const Duration(seconds: 30),
-        pauseFor: const Duration(seconds: 3),
+        listenFor: listenFor ?? const Duration(seconds: 30),
+        pauseFor: pauseFor ?? const Duration(seconds: 3),
         partialResults: true,
         cancelOnError: true,
         localeId: _selectedLocaleId,
       ),
     );
+  }
+
+  /// Returns true if [text] contains the "Hey Mickey" wake word
+  static bool containsWakeWord(String text) {
+    if (text.trim().isEmpty) return false;
+    final regex = RegExp(
+      r'\b(?:(?:hey|suno|hello|hi)\s+)?(?:mick(?:ey|y|i)|miki|jarvis)\b',
+      caseSensitive: false,
+    );
+    return regex.hasMatch(text);
+  }
+
+  /// Strips the "Hey Mickey" wake word prefix from a recognized text command
+  static String stripWakeWord(String text) {
+    if (text.trim().isEmpty) return '';
+    final regex = RegExp(
+      r'^(?:(?:hey|suno|hello|hi)\s+)?(?:mick(?:ey|y|i)|miki|jarvis)[,\s:]*',
+      caseSensitive: false,
+    );
+    return text.replaceFirst(regex, '').trim();
   }
 
   /// Stop listening and commit current recognized words.

@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import '../models/chat_message.dart';
 
@@ -46,6 +47,7 @@ class AiService {
     List<ChatMessage> history = const [],
   }) async {
     final uri = Uri.parse('$_baseUrl/api/chat');
+    debugPrint('[AiService] Sending request to $uri: "$message"');
 
     // Build compact history for the backend (last 6 messages)
     final formattedHistory = history
@@ -69,6 +71,8 @@ class AiService {
           )
           .timeout(const Duration(seconds: 25));
 
+      debugPrint('[AiService] Received status: ${response.statusCode}, response: ${response.body}');
+
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
         final reply = data['reply'] as String? ?? 'All systems operational, Sir.';
@@ -80,8 +84,12 @@ class AiService {
             action: (data['action'] as String? ?? '').toLowerCase().trim(),
             query: data['query'] as String?,
             app: data['app'] as String?,
+            phoneNumber: (data['phoneNumber'] ?? data['number']) as String?,
+            message: (data['message'] ?? data['sms_body']) as String?,
           );
         }
+
+        debugPrint('[AiService] Parsed AiResponse: type=$type, action=${actionData?.action}, query=${actionData?.query}, app=${actionData?.app}, phone=${actionData?.phoneNumber}, msg=${actionData?.message}');
 
         return AiResponse(
           reply: reply,

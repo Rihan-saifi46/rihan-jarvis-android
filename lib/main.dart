@@ -16,19 +16,22 @@ void main() {
     ),
   );
 
-  runApp(const JarvisApp());
+  runApp(const MickeyApp());
 }
 
-class JarvisApp extends StatelessWidget {
-  const JarvisApp({super.key});
+class MickeyApp extends StatelessWidget {
+  const MickeyApp({super.key});
 
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'JARVIS',
+      title: 'Mickey',
       debugShowCheckedModeBanner: false,
       theme: JarvisTheme.darkTheme,
       home: const ChatScreen(),
     );
   }
 }
+
+// Backward-compatible alias for existing tests
+typedef JarvisApp = MickeyApp;

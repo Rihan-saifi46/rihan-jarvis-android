@@ -120,7 +120,7 @@ class MessageBubble extends StatelessWidget {
                         const SizedBox(width: 4),
                       ],
                       Text(
-                        isUser ? 'YOU' : 'JARVIS',
+                        isUser ? 'YOU' : 'MICKEY',
                         style: TextStyle(
                           color: isUser
                               ? JarvisTheme.emerald
@@ -241,7 +241,10 @@ class MessageBubble extends StatelessWidget {
     IconData icon;
     String actionTitle;
     String actionDetail;
+    String? actionSubDetail;
     Color accentColor;
+    String buttonLabel = 'OPEN';
+    String readyStatus = 'ACTION READY';
 
     switch (action.action) {
       case 'youtube_search':
@@ -261,6 +264,38 @@ class MessageBubble extends StatelessWidget {
         actionTitle = 'OPEN APPLICATION';
         actionDetail = action.app?.toUpperCase() ?? '';
         accentColor = JarvisTheme.cyan;
+        break;
+      case 'make_call':
+        icon = Icons.call;
+        actionTitle = 'PHONE CALL';
+        actionDetail = action.phoneNumber ?? '';
+        accentColor = const Color(0xFF00E676);
+        buttonLabel = 'CALL';
+        readyStatus = 'OPENING DIALER';
+        break;
+      case 'send_sms':
+        icon = Icons.sms_outlined;
+        actionTitle = 'SMS MESSAGE';
+        actionDetail = action.phoneNumber != null ? 'To: ${action.phoneNumber}' : '';
+        if (action.message != null && action.message!.trim().isNotEmpty) {
+          actionSubDetail = '"${action.message!.trim()}"';
+        }
+        accentColor = const Color(0xFFFFB300);
+        buttonLabel = 'SMS';
+        readyStatus = 'OPENING SMS';
+        break;
+      case 'open_whatsapp':
+        icon = Icons.chat_bubble_outline_rounded;
+        actionTitle = 'WHATSAPP';
+        actionDetail = action.phoneNumber != null
+            ? (action.phoneNumber!.startsWith('+') ? 'To: ${action.phoneNumber}' : 'To: +${action.phoneNumber}')
+            : '';
+        if (action.message != null && action.message!.trim().isNotEmpty) {
+          actionSubDetail = '"${action.message!.trim()}"';
+        }
+        accentColor = const Color(0xFF25D366);
+        buttonLabel = 'CHAT';
+        readyStatus = 'OPENING WHATSAPP';
         break;
       default:
         icon = Icons.bolt;
@@ -284,6 +319,7 @@ class MessageBubble extends StatelessWidget {
         ),
       ),
       child: Row(
+        crossAxisAlignment: actionSubDetail != null ? CrossAxisAlignment.start : CrossAxisAlignment.center,
         children: [
           Container(
             padding: const EdgeInsets.all(7),
@@ -324,7 +360,7 @@ class MessageBubble extends StatelessWidget {
                       child: Text(
                         isSuccess
                             ? 'EXECUTED'
-                            : (isFailed ? 'FAILED' : 'ACTION READY'),
+                            : (isFailed ? 'FAILED' : readyStatus),
                         style: TextStyle(
                           color: isSuccess
                               ? JarvisTheme.emerald
@@ -347,6 +383,32 @@ class MessageBubble extends StatelessWidget {
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                 ),
+                if (actionSubDetail != null) ...[
+                  const SizedBox(height: 2),
+                  Text(
+                    actionSubDetail,
+                    style: const TextStyle(
+                      color: JarvisTheme.textSecondary,
+                      fontSize: 11,
+                      fontStyle: FontStyle.italic,
+                    ),
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ],
+                if (isFailed && action.executionMessage != null) ...[
+                  const SizedBox(height: 3),
+                  Text(
+                    action.executionMessage!,
+                    style: const TextStyle(
+                      color: JarvisTheme.errorRed,
+                      fontSize: 10,
+                      fontWeight: FontWeight.w500,
+                    ),
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ],
               ],
             ),
           ),
@@ -360,12 +422,12 @@ class MessageBubble extends StatelessWidget {
                 decoration: BoxDecoration(
                   color: JarvisTheme.surfaceLight,
                   borderRadius: BorderRadius.circular(8),
-                  border: Border.all(color: JarvisTheme.surfaceBorder),
+                  border: Border.all(color: isFailed ? JarvisTheme.errorRed.withValues(alpha: 0.5) : JarvisTheme.surfaceBorder),
                 ),
-                child: const Text(
-                  'OPEN',
+                child: Text(
+                  isFailed ? 'RETRY' : (action.isExecuted ? 'RE-OPEN' : buttonLabel),
                   style: TextStyle(
-                    color: JarvisTheme.cyan,
+                    color: isFailed ? JarvisTheme.errorRed : accentColor,
                     fontSize: 10,
                     fontWeight: FontWeight.w700,
                   ),

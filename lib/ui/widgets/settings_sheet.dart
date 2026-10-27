@@ -46,7 +46,7 @@ class _SettingsSheetState extends State<SettingsSheet> {
         final hasKey = health['apiKeyConfigured'] == true;
         final model = health['model'] ?? 'Gemini';
         _testResult = hasKey
-            ? '⚡ JARVIS Core Online ($model). All systems green, Sir.'
+            ? '⚡ Mickey Core Online ($model). All systems green, Sir.'
             : '⚠️ Connected to server, but GEMINI_API_KEY is missing in backend/.env!';
       } else {
         _isSuccess = false;
