@@ -55,6 +55,99 @@ app.get('/api/health', (req, res) => {
   });
 });
 
+/**
+ * Normalizes, filters, and formats chat history for Gemini API startChat().
+ * Rules enforced:
+ * 1. Role mapping: 'user' -> 'user', 'assistant'/'model'/'jarvis' -> 'model'
+ * 2. Deduplication: Removes current user message if already present at the end of history
+ * 3. Leading role: Removes leading 'model' messages (history must always start with 'user')
+ * 4. Alternation: Ensures messages strictly alternate user -> model -> user -> model
+ *    (consecutive messages with the same role are combined to preserve context)
+ * 5. Trailing role: Ensures history ends with 'model' so chat.sendMessage(currentMessage) is the 'user' turn
+ * 6. Privacy & Context Window: Keeps up to 6 recent messages
+ */
+export function buildGeminiHistory(rawHistory, currentMessage) {
+  if (!Array.isArray(rawHistory) || rawHistory.length === 0) {
+    return [];
+  }
+
+  // 1. Normalize roles and filter valid text
+  const normalized = [];
+  for (const item of rawHistory) {
+    if (!item || typeof item.text !== 'string') continue;
+    const text = item.text.trim();
+    if (!text) continue;
+
+    const rawRole = (item.role || '').toLowerCase().trim();
+    let role;
+    if (rawRole === 'user') {
+      role = 'user';
+    } else if (rawRole === 'assistant' || rawRole === 'model' || rawRole === 'jarvis') {
+      role = 'model';
+    } else {
+      continue;
+    }
+
+    normalized.push({ role, text });
+  }
+
+  // 2. Prevent including the current user message twice
+  const trimmedCurrent = (currentMessage || '').trim();
+  if (
+    normalized.length > 0 &&
+    normalized[normalized.length - 1].role === 'user' &&
+    normalized[normalized.length - 1].text === trimmedCurrent
+  ) {
+    normalized.pop();
+  }
+
+  // 3. Remove leading model messages (Gemini history must begin with 'user')
+  while (normalized.length > 0 && normalized[0].role !== 'user') {
+    normalized.shift();
+  }
+
+  if (normalized.length === 0) {
+    return [];
+  }
+
+  // 4. Ensure alternating sequence: user, model, user, model...
+  const alternating = [];
+  for (const item of normalized) {
+    if (alternating.length === 0) {
+      if (item.role === 'user') {
+        alternating.push({ role: 'user', text: item.text });
+      }
+    } else {
+      const prev = alternating[alternating.length - 1];
+      if (prev.role === item.role) {
+        // Merge consecutive messages of the same role
+        prev.text = `${prev.text}\n${item.text}`;
+      } else {
+        alternating.push({ role: item.role, text: item.text });
+      }
+    }
+  }
+
+  // 5. Ensure history ends with 'model' so chat.sendMessage(message) will be the 'user' turn
+  while (alternating.length > 0 && alternating[alternating.length - 1].role !== 'model') {
+    alternating.pop();
+  }
+
+  // 6. Limit to last 6 messages for context privacy & low latency
+  const recent = alternating.slice(-6);
+
+  // Slicing might have started on a 'model' message; ensure recent starts with 'user'
+  while (recent.length > 0 && recent[0].role !== 'user') {
+    recent.shift();
+  }
+
+  // 7. Format into Gemini Content objects
+  return recent.map((item) => ({
+    role: item.role,
+    parts: [{ text: item.text }],
+  }));
+}
+
 // Chat endpoint
 app.post('/api/chat', async (req, res) => {
   try {
@@ -78,19 +171,9 @@ app.post('/api/chat', async (req, res) => {
       });
     }
 
-    // Build context history (limit to last 6 messages for efficiency & privacy)
-    const formattedHistory = [];
-    if (Array.isArray(history)) {
-      const recent = history.slice(-6);
-      for (const item of recent) {
-        if (item.role && item.text) {
-          formattedHistory.push({
-            role: item.role === 'user' ? 'user' : 'model',
-            parts: [{ text: item.text }],
-          });
-        }
-      }
-    }
+    // Build normalized, validated context history for Gemini
+    const formattedHistory = buildGeminiHistory(history, message);
+
 
     // Helper for calling Gemini with retry on transient network/demand spikes
     const executeChatWithRetry = async (modelToUse, retries = 2) => {
@@ -174,11 +257,19 @@ app.post('/api/chat', async (req, res) => {
   }
 });
 
-app.listen(PORT, '0.0.0.0', () => {
-  console.log(`===============================================`);
-  console.log(`⚡ J.A.R.V.I.S. Core Server is Online`);
-  console.log(`⚡ Listening on port ${PORT} (0.0.0.0)`);
-  console.log(`⚡ API Key Configured: ${Boolean(GEMINI_API_KEY && GEMINI_API_KEY !== 'your_gemini_api_key_here')}`);
-  console.log(`⚡ Ready for POCO M7 Plus & Local Connections`);
-  console.log(`===============================================`);
-});
+import { fileURLToPath } from 'node:url';
+
+const isMainModule = process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1];
+if (isMainModule) {
+  app.listen(PORT, '0.0.0.0', () => {
+    console.log(`===============================================`);
+    console.log(`⚡ J.A.R.V.I.S. Core Server is Online`);
+    console.log(`⚡ Listening on port ${PORT} (0.0.0.0)`);
+    console.log(`⚡ API Key Configured: ${Boolean(GEMINI_API_KEY && GEMINI_API_KEY !== 'your_gemini_api_key_here')}`);
+    console.log(`⚡ Ready for POCO M7 Plus & Local Connections`);
+    console.log(`===============================================`);
+  });
+}
+
+export default app;
+
